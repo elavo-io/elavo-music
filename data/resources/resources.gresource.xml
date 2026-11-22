@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/elavo/Music">
+    <file compressed="true">resources/style.css</file>
+  </gresource>
+  <gresource prefix="/io/elavo/Music/icons">
+    <file compressed="true" alias="scalable/apps/io.elavo.Music.svg">icons/hicolor/scalable/apps/io.elavo.Music.svg</file>
+    <file compressed="true" alias="scalable/actions/music-filter-symbolic.svg">icons/hicolor/symbolic/actions/music-filter-symbolic.svg</file>
+  </gresource>
+</gresources>

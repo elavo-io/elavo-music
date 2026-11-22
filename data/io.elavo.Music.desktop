@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Music
+GenericName=Music Player
+Comment=Browse and play your music library
+Exec=elavo-music
+Icon=io.elavo.Music
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.elavo.Music
+Categories=GTK;AudioVideo;Audio;Music;Player;
+Keywords=music;audio;songs;albums;artists;player;library;ipod;
+# Music's own default accent, light and dark. The system's Automatic accent
+# (System Settings, not built yet) respects it; a color the person picks
+# overrides it. Keep in step with src/accent.rs.
+# TODO: PLACEHOLDER hex values. Replace with colors sampled from the Apple
+# Music screenshots (selected row fill and sidebar icons, light and dark).
+X-Elavo-DefaultAccent=light:#FA233B;dark:#FC3C5B

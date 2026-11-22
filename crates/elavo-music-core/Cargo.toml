@@ -1,0 +1,15 @@
+[package]
+name = "elavo-music-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Library, tags, database and queue for Elavo Music"
+
+[dependencies]
+lofty = "0.25"
+rusqlite = "0.43"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,390 @@
+/* Elavo Music. Window frames, title bars and the window buttons come from
+ * the GTK theme, and colors follow it, so light and dark both work; dark is
+ * the look this is drawn for. The one color Music brings is its accent,
+ * --music-accent, set from src/accent.rs for the current color scheme. */
+
+/* Title bar and sidebar: the window buttons sit over the sidebar, which
+   reads as one surface with its band, a shade off the content. */
+.music-sidebar,
+.music-sidebar-band {
+  background-color: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.music-sidebar-band {
+  padding: 0 12px;
+  min-height: 52px;
+}
+
+.music-toolbar {
+  padding: 8px 14px 8px 20px;
+  min-height: 36px;
+  background-color: @theme_bg_color;
+}
+
+.music-view-title {
+  font-weight: 800;
+  font-size: 1.4em;
+}
+
+.music-pill-group {
+  border-radius: 999px;
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+  padding: 0 2px;
+}
+
+.music-pill-group > button,
+.music-pill-group > menubutton > button {
+  min-width: 34px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 4px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  box-shadow: none;
+}
+
+.music-pill-group > menubutton > button:hover {
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.music-pill-group > menubutton > button.active {
+  color: var(--music-accent);
+}
+
+.music-find {
+  min-height: 30px;
+  border-radius: 999px;
+}
+
+.music-find:focus-within {
+  outline-color: var(--music-accent);
+}
+
+/* Sidebar */
+.music-side-list {
+  background: transparent;
+  padding: 4px 10px 12px;
+}
+
+.music-side-list row {
+  border-radius: 6px;
+  padding: 3px 8px;
+  min-height: 28px;
+}
+
+.music-side-list row:selected {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
+  color: @theme_fg_color;
+}
+
+.music-side-list row.music-section {
+  padding: 14px 8px 3px;
+  min-height: 0;
+  background: none;
+}
+
+.music-section-title {
+  font-size: 0.82em;
+  font-weight: bold;
+  color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.music-side-icon {
+  color: var(--music-accent);
+}
+
+.music-accent {
+  color: var(--music-accent);
+}
+
+/* Covers */
+.music-cover {
+  border-radius: 8px;
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.music-cover-icon {
+  color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+/* Scrolling content keeps clear of the floating player bar. */
+.music-grid {
+  padding: 12px 20px 120px;
+  background: transparent;
+}
+
+.music-grid > child {
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.music-tile-title {
+  font-weight: 600;
+}
+
+.music-tile-artist,
+.music-meta {
+  font-size: 0.86em;
+  opacity: 0.62;
+}
+
+.music-detail {
+  padding: 18px 32px 130px;
+}
+
+.music-back {
+  padding: 2px 4px;
+  min-height: 0;
+  border: none;
+  box-shadow: none;
+  background: none;
+  color: var(--music-accent);
+  font-weight: 600;
+}
+
+.music-album-title {
+  font-size: 1.7em;
+  font-weight: 800;
+}
+
+.music-album-artist {
+  font-size: 1.15em;
+}
+
+.music-artist-heading {
+  font-size: 1.9em;
+  font-weight: 800;
+}
+
+/* Track lists */
+.music-tracklist {
+  background: transparent;
+}
+
+.music-tracklist row {
+  padding: 7px 12px;
+  border-radius: 6px;
+}
+
+.music-tracklist row:nth-child(odd) {
+  background-color: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+.music-tracklist row:selected,
+.music-artist-list row:selected,
+.music-songs row:selected,
+.music-genre-list row:selected {
+  background-color: var(--music-accent);
+  color: white;
+}
+
+.music-tracklist row:selected .music-meta,
+.music-tracklist row:selected .music-tracknum,
+.music-artist-list row:selected .music-meta {
+  color: white;
+  opacity: 0.85;
+}
+
+.music-tracknum {
+  font-feature-settings: "tnum";
+  opacity: 0.6;
+}
+
+/* Artists */
+.music-artist-pane {
+  background-color: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+.music-artist-list {
+  background: transparent;
+  padding: 8px 8px 120px;
+}
+
+.music-artist-list row {
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.music-artist-name {
+  font-weight: 600;
+}
+
+/* Songs */
+.music-songs {
+  background: transparent;
+  padding-bottom: 120px;
+}
+
+.music-songs > header {
+  padding: 2px 6px;
+}
+
+/* Column titles are square. The Elavo theme only zeros the radius on
+   columnview.view > header > button, and Songs does not use that class. */
+.music-songs > header button {
+  border-radius: 0;
+}
+
+.music-songs > listview {
+  background: transparent;
+  padding-bottom: 120px;
+}
+
+.music-songs row {
+  min-height: 34px;
+  border-radius: 6px;
+}
+
+.music-songs row:nth-child(odd) {
+  background-color: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+.music-songs row:selected:nth-child(odd) {
+  background-color: var(--music-accent);
+}
+
+.music-cell {
+  padding: 0 6px;
+  font-feature-settings: "tnum";
+}
+
+/* Genre filter menu */
+.music-genre-list {
+  background: transparent;
+}
+
+.music-genre-list row {
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.music-genre-list row:selected .music-accent,
+.music-genre-list row:selected image {
+  color: white;
+}
+
+/* Status pages */
+.music-status {
+  padding: 24px;
+}
+
+.music-status-icon {
+  color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.music-pill-button {
+  border-radius: 999px;
+  padding: 6px 18px;
+  min-height: 0;
+}
+
+.music-accent-button {
+  background-color: color-mix(in srgb, var(--music-accent) 16%, transparent);
+  color: var(--music-accent);
+  font-weight: 600;
+  border: none;
+  box-shadow: none;
+}
+
+.music-scan-label {
+  margin-top: 10px;
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-size: 0.86em;
+  background-color: color-mix(in srgb, @theme_bg_color 80%, currentColor 20%);
+}
+
+/* The floating player bar */
+.music-pill {
+  padding: 10px 20px 10px 14px;
+  border-radius: 24px;
+  background-color: color-mix(in srgb, @theme_bg_color 86%, currentColor 14%);
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+
+.music-transport {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  box-shadow: none;
+}
+
+.music-transport:hover {
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.music-transport:disabled {
+  opacity: 0.35;
+}
+
+.music-play {
+  min-width: 40px;
+  min-height: 40px;
+  -gtk-icon-size: 22px;
+}
+
+.music-toggle:checked,
+.music-toggle.active {
+  color: var(--music-accent);
+  background-color: color-mix(in srgb, var(--music-accent) 16%, transparent);
+}
+
+.music-now-title {
+  font-weight: 700;
+}
+
+.music-now-artist {
+  font-size: 0.86em;
+  opacity: 0.62;
+}
+
+.music-time {
+  font-size: 0.78em;
+  font-feature-settings: "tnum";
+  opacity: 0.62;
+}
+
+scale.music-progress,
+scale.music-volume {
+  min-height: 12px;
+  padding: 0;
+}
+
+scale.music-progress trough,
+scale.music-volume trough {
+  min-height: 4px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, currentColor 20%, transparent);
+}
+
+scale.music-progress highlight,
+scale.music-volume highlight {
+  border-radius: 999px;
+  background-color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
+scale.music-progress slider,
+scale.music-volume slider {
+  min-width: 10px;
+  min-height: 10px;
+  margin: -4px;
+  border: none;
+  background-color: @theme_fg_color;
+  box-shadow: none;
+  opacity: 0;
+}
+
+scale.music-progress:hover slider,
+scale.music-volume:hover slider {
+  opacity: 1;
+}
+
+.music-vol-icon {
+  opacity: 0.62;
+}

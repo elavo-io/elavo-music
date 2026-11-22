@@ -1,0 +1,18 @@
+#!/bin/sh
+# Install a release build. Run `cargo build --release` first (add
+# `--features playback` for sound). Honors DESTDIR and PREFIX (default /usr).
+set -eu
+
+cd "$(dirname "$0")/.."
+prefix="${PREFIX:-/usr}"
+dest="${DESTDIR:-}"
+id=io.elavo.Music
+
+install -Dm755 target/release/elavo-music \
+    "${dest}${prefix}/bin/elavo-music"
+install -Dm644 "data/${id}.desktop" \
+    "${dest}${prefix}/share/applications/${id}.desktop"
+install -Dm644 "data/${id}.metainfo.xml" \
+    "${dest}${prefix}/share/metainfo/${id}.metainfo.xml"
+install -Dm644 "data/icons/hicolor/scalable/apps/${id}.svg" \
+    "${dest}${prefix}/share/icons/hicolor/scalable/apps/${id}.svg"

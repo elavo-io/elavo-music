@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/elavo-music-core",
+    "crates/elavo-music",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/elavo-io/elavo-music"
+authors = ["Kevin Doyle"]
+
+[workspace.dependencies]
+elavo-music-core = { path = "crates/elavo-music-core" }
+
+[profile.release]
+lto = "thin"
+strip = true

@@ -1,0 +1,31 @@
+[package]
+name = "elavo-music"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Elavo Music, a local music library and player (shown as Music)"
+
+[[bin]]
+name = "elavo-music"
+path = "src/main.rs"
+
+[features]
+default = ["playback"]
+# Audio output through GStreamer (playbin3). This is the default. It needs
+# gstreamer1-devel and gstreamer1-plugins-base-devel to build. Use
+# --no-default-features for a silent backend that keeps the queue, the bar
+# and the clock working.
+playback = ["dep:gstreamer"]
+
+[dependencies]
+elavo-music-core.workspace = true
+gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
+gstreamer = { version = "0.25", optional = true }
+
+[build-dependencies]
+glib-build-tools = "0.22"
+
+[dev-dependencies]
+tempfile = "3"

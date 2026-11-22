@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+.flatpak-builder
+/repo
+*.AppImage
+.cargo

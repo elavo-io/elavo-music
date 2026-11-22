@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.elavo.Music</id>
+  <name>Music</name>
+  <summary>Browse and play your music library</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.elavo">
+    <name>Kevin Doyle</name>
+  </developer>
+  <description>
+    <p>
+      Music is the Elavo desktop's music app. It keeps a library of the
+      songs in your Music folder, with Recently Added, Artists, Albums and
+      Songs views, and plays them from a floating player bar.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.elavo.Music.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-21"/>
+  </releases>
+  <url type="homepage">https://github.com/elavo-io/elavo-music</url>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+</component>
