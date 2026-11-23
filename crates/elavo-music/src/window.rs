@@ -1,6 +1,6 @@
-//! The Music window: a sidebar over the title bar's window buttons, a
+//! The Music window: a sidebar column with the window buttons over it, a
 //! per-view header with a filter button and a "Find in" field, the views,
-//! and the floating player bar over the bottom of the content.
+//! and the floating player bar over the bottom of the content column.
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -22,6 +22,8 @@ use crate::songs::SongsView;
 use crate::widgets::{status_page, Ctx, State};
 
 const SIDEBAR_WIDTH: i32 = 232;
+const MIN_WIDTH: i32 = 800;
+const MIN_HEIGHT: i32 = 520;
 
 /// id, title, icon, "Find in" text. `None` for views with no find field.
 const LIBRARY_VIEWS: &[(&str, &str, &str)] = &[
@@ -104,6 +106,12 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
     // Add the class instead of setting css-classes, which would drop GTK's
     // own "background" class and leave the window see-through.
     window.add_css_class("music-window");
+    window.set_size_request(MIN_WIDTH, MIN_HEIGHT);
+    // The title band lives in each column, so the window has no title bar
+    // of its own. An empty, hidden widget keeps GTK from adding the default one.
+    let hidden_titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    hidden_titlebar.set_visible(false);
+    window.set_titlebar(Some(&hidden_titlebar));
 
     // The player and the callbacks the views use to reach it. The window
     // exists by the time any of them runs.
@@ -204,11 +212,6 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
     let end_controls = gtk::WindowControls::new(gtk::PackType::End);
     end_controls.set_valign(gtk::Align::Center);
     toolbar.append(&end_controls);
-    let chrome = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    chrome.append(&band);
-    chrome.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    chrome.append(&toolbar);
-    window.set_titlebar(Some(&gtk::WindowHandle::builder().child(&chrome).build()));
 
     // Sidebar.
     let sidebar = gtk::ListBox::builder()
@@ -233,10 +236,8 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
     ));
     let side_scroll = gtk::ScrolledWindow::builder()
         .child(&sidebar)
-        .width_request(SIDEBAR_WIDTH)
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
-        .css_classes(["music-sidebar"])
         .build();
 
     // Views.
@@ -283,6 +284,7 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
         .child(&stack)
         .hexpand(true)
         .vexpand(true)
+        .overflow(gtk::Overflow::Hidden)
         .build();
     overlay.add_overlay(&scan_bar);
     // Add the pill itself as the overlay, not a full-size holder with
@@ -296,10 +298,29 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
     pill.set_can_target(true);
     overlay.add_overlay(pill);
 
+    // One sidebar column and one content column, so the window buttons
+    // sit over the sidebar and the two sides cannot drift apart or overlap.
+    let sidebar_col = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .width_request(SIDEBAR_WIDTH)
+        .hexpand(false)
+        .css_classes(["music-sidebar"])
+        .build();
+    sidebar_col.append(&gtk::WindowHandle::builder().child(&band).build());
+    sidebar_col.append(&side_scroll);
+
+    let content_col = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    content_col.append(&gtk::WindowHandle::builder().child(&toolbar).build());
+    content_col.append(&overlay);
+
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    body.append(&side_scroll);
+    body.append(&sidebar_col);
     body.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    body.append(&overlay);
+    body.append(&content_col);
     window.set_child(Some(&body));
 
     let music = Rc::new(Music {
@@ -326,6 +347,30 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
     });
     *music_cell.borrow_mut() = Some(Rc::downgrade(&music));
     music.wire();
+
+    // Keep the floating player bar inside the content column, shrinking
+    // or hiding its secondary parts before it would overflow.
+    let hooked = Rc::new(Cell::new(false));
+    window.connect_realize({
+        let player = music.player.clone();
+        let overlay = overlay.clone();
+        move |window| {
+            if hooked.replace(true) {
+                return;
+            }
+            let Some(surface) = window.surface() else {
+                return;
+            };
+            let player = player.clone();
+            let overlay = overlay.clone();
+            surface.connect_layout(move |_, _, _| {
+                let width = overlay.width();
+                if width > 0 {
+                    player.adapt_to_width(width);
+                }
+            });
+        }
+    });
 
     // Where to start: the last view would be remembered later; for now
     // Songs, or the one a screenshot asks for.

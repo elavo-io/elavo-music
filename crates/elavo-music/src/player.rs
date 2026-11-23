@@ -29,6 +29,7 @@ struct Ui {
     remaining: gtk::Label,
     progress: gtk::Scale,
     volume: gtk::Scale,
+    vol: gtk::Box,
 }
 
 pub struct Player {
@@ -125,7 +126,6 @@ impl Player {
             .valign(gtk::Align::End)
             .css_classes(["music-pill"])
             .build();
-        root.set_width_request(780);
         root.append(&shuffle);
         root.append(&prev);
         root.append(&play);
@@ -162,6 +162,7 @@ impl Player {
             remaining,
             progress,
             volume,
+            vol,
         };
         let player = Rc::new(Player {
             backend: RefCell::new(backend),
@@ -180,6 +181,19 @@ impl Player {
 
     pub fn widget(&self) -> &gtk::Box {
         &self.ui.root
+    }
+
+    /// Fit the floating bar into the content column. The bar stays at its
+    /// usual width when there is room, then shrinks, hiding the volume
+    /// control, shuffle, repeat, and time labels before it would overflow.
+    pub fn adapt_to_width(&self, content_width: i32) {
+        let width = (content_width - 36).clamp(300, 780);
+        self.ui.root.set_width_request(width);
+        self.ui.vol.set_visible(width >= 640);
+        self.ui.shuffle.set_visible(width >= 520);
+        self.ui.repeat.set_visible(width >= 520);
+        self.ui.elapsed.set_visible(width >= 400);
+        self.ui.remaining.set_visible(width >= 400);
     }
 
     fn wire(self: &Rc<Self>) {

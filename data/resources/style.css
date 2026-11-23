@@ -3,10 +3,9 @@
  * the look this is drawn for. The one color Music brings is its accent,
  * --music-accent, set from src/accent.rs for the current color scheme. */
 
-/* Title bar and sidebar: the window buttons sit over the sidebar, which
-   reads as one surface with its band, a shade off the content. */
-.music-sidebar,
-.music-sidebar-band {
+/* Sidebar column: the window buttons sit over the list, one surface a
+   shade off the content. */
+.music-sidebar {
   background-color: color-mix(in srgb, currentColor 5%, transparent);
 }
 
@@ -296,10 +295,12 @@
   background-color: color-mix(in srgb, @theme_bg_color 80%, currentColor 20%);
 }
 
-/* The floating player bar */
+/* The floating player bar. min-width: 0 lets the progress area shrink
+   when the content column is narrower than the bar's usual width. */
 .music-pill {
   padding: 10px 20px 10px 14px;
   border-radius: 24px;
+  min-width: 0;
   background-color: color-mix(in srgb, @theme_bg_color 86%, currentColor 14%);
   border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
