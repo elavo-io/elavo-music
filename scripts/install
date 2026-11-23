@@ -14,5 +14,7 @@ install -Dm644 "data/${id}.desktop" \
     "${dest}${prefix}/share/applications/${id}.desktop"
 install -Dm644 "data/${id}.metainfo.xml" \
     "${dest}${prefix}/share/metainfo/${id}.metainfo.xml"
-install -Dm644 "data/icons/hicolor/scalable/apps/${id}.svg" \
-    "${dest}${prefix}/share/icons/hicolor/scalable/apps/${id}.svg"
+for size in 128x128 256x256 512x512; do
+    install -Dm644 "data/icons/hicolor/${size}/apps/${id}.png" \
+        "${dest}${prefix}/share/icons/hicolor/${size}/apps/${id}.png"
+done

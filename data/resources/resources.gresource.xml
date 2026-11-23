@@ -4,7 +4,7 @@
     <file compressed="true">resources/style.css</file>
   </gresource>
   <gresource prefix="/io/elavo/Music/icons">
-    <file compressed="true" alias="scalable/apps/io.elavo.Music.svg">icons/hicolor/scalable/apps/io.elavo.Music.svg</file>
+    <file alias="256x256/apps/io.elavo.Music.png">icons/hicolor/256x256/apps/io.elavo.Music.png</file>
     <file compressed="true" alias="scalable/actions/music-filter-symbolic.svg">icons/hicolor/symbolic/actions/music-filter-symbolic.svg</file>
   </gresource>
 </gresources>
