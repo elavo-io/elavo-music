@@ -5,6 +5,7 @@
 pub mod art;
 pub mod db;
 pub mod model;
+pub mod online;
 pub mod paths;
 pub mod queue;
 pub mod scan;
@@ -14,5 +15,6 @@ pub mod util;
 
 pub use art::ArtCache;
 pub use db::{AlbumOrder, Library, TrackOrder};
-pub use model::{Album, Artist, Filter, Track};
+pub use model::{Album, Artist, Filter, OnlineMeta, Track};
 pub use queue::{Queue, Repeat};
+pub use settings::OnlineChoice;

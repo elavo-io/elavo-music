@@ -5,12 +5,15 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use elavo_music_core::online::{run_batch, Online};
 use elavo_music_core::settings::Settings;
-use elavo_music_core::{paths, AlbumOrder, ArtCache, Filter, Library, TrackOrder};
+use elavo_music_core::{
+    paths, AlbumOrder, ArtCache, Filter, Library, OnlineChoice, Repeat, TrackOrder,
+};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -18,6 +21,7 @@ use crate::albums::AlbumsView;
 use crate::artists::ArtistsView;
 use crate::keys;
 use crate::player::Player;
+use crate::prefs::Prefs;
 use crate::songs::SongsView;
 use crate::widgets::{status_page, Ctx, State};
 
@@ -44,6 +48,8 @@ struct Music {
     popover: gtk::Popover,
     sidebar: gtk::ListBox,
     scan_bar: gtk::Revealer,
+    /// The first-run online-lookup question, hidden until it is asked.
+    prompt: gtk::Revealer,
     scan_label: gtk::Label,
     recent: Rc<AlbumsView>,
     albums: Rc<AlbumsView>,
@@ -54,6 +60,13 @@ struct Music {
     scanning: Cell<bool>,
     music_dir: PathBuf,
     player: Rc<Player>,
+    settings: RefCell<Settings>,
+    /// True while songs are being looked up online.
+    fetching: Cell<bool>,
+    cancel_online: Arc<AtomicBool>,
+    /// The first-run question is asked at most once per run.
+    asked: Cell<bool>,
+    prefs: RefCell<Option<Rc<Prefs>>>,
 }
 
 fn pill() -> gtk::Box {
@@ -287,6 +300,22 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
         .overflow(gtk::Overflow::Hidden)
         .build();
     overlay.add_overlay(&scan_bar);
+    // The first-run question about online lookups. It needs the Music
+    // (made below) to act on the answer, so the answer is wired after.
+    let answer_cell: Rc<RefCell<Option<std::rc::Weak<Music>>>> = Rc::default();
+    let prompt = crate::prefs::prompt_card({
+        let cell = answer_cell.clone();
+        move |yes| {
+            if let Some(music) = cell.borrow().as_ref().and_then(|w| w.upgrade()) {
+                music.set_online_choice(if yes {
+                    OnlineChoice::On
+                } else {
+                    OnlineChoice::Off
+                });
+            }
+        }
+    });
+    overlay.add_overlay(&prompt);
     // Add the pill itself as the overlay, not a full-size holder with
     // can_target(false). GTK's pick() does not descend into a widget
     // that cannot be a target, so that holder made the play button
@@ -334,6 +363,7 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
         popover,
         sidebar,
         scan_bar,
+        prompt,
         scan_label,
         recent,
         albums,
@@ -344,9 +374,18 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
         scanning: Cell::new(false),
         music_dir: settings.music_folder.clone(),
         player,
+        settings: RefCell::new(settings.clone()),
+        fetching: Cell::new(false),
+        cancel_online: Arc::new(AtomicBool::new(false)),
+        asked: Cell::new(false),
+        prefs: RefCell::new(None),
     });
     *music_cell.borrow_mut() = Some(Rc::downgrade(&music));
+    *answer_cell.borrow_mut() = Some(Rc::downgrade(&music));
     music.wire();
+    music.install_actions();
+    // Media keys, media widgets and playerctl reach Music through this.
+    crate::mpris::start(app, &window, &music.player);
 
     // Keep the floating player bar inside the content column, shrinking
     // or hiding its secondary parts before it would overflow.
@@ -386,6 +425,332 @@ pub fn build(app: &gtk::Application) -> gtk::ApplicationWindow {
         }
     });
     window
+}
+
+/// The window's actions, which the global menu runs, and the online
+/// lookups they lead to.
+impl Music {
+    fn simple_action(&self, name: &str) -> Option<gio::SimpleAction> {
+        self.window
+            .lookup_action(name)
+            .and_then(|a| a.downcast::<gio::SimpleAction>().ok())
+    }
+
+    fn install_actions(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        // A plain action that calls `f` with the Music window's state.
+        let plain = |name: &str, f: fn(&Rc<Music>)| {
+            let action = gio::SimpleAction::new(name, None);
+            let weak = weak.clone();
+            action.connect_activate(move |_, _| {
+                if let Some(music) = weak.upgrade() {
+                    f(&music);
+                }
+            });
+            self.window.add_action(&action);
+        };
+        plain("add-to-library", |m| m.add_to_library());
+        plain("rescan", |m| m.rescan());
+        plain("find", |m| {
+            if m.search.is_visible() {
+                m.search.grab_focus();
+            }
+        });
+        plain("preferences", |m| m.show_prefs());
+        plain("play-pause", |m| {
+            m.player.handle_media(keys::MediaAction::Toggle)
+        });
+        plain("next", |m| m.player.next(false));
+        plain("previous", |m| m.player.previous());
+        plain("volume-up", |m| m.player.adjust_volume(0.1));
+        plain("volume-down", |m| m.player.adjust_volume(-0.1));
+        plain("show-genres", |m| {
+            if m.filter_button.is_visible() {
+                m.filter_button.popup();
+            }
+        });
+
+        let shuffle = gio::SimpleAction::new_stateful("shuffle", None, &false.to_variant());
+        shuffle.connect_change_state({
+            let weak = weak.clone();
+            move |action, value| {
+                if let (Some(music), Some(value)) = (weak.upgrade(), value) {
+                    music
+                        .player
+                        .set_shuffle(value.get::<bool>().unwrap_or(false));
+                    action.set_state(value);
+                }
+            }
+        });
+        self.window.add_action(&shuffle);
+
+        let repeat = gio::SimpleAction::new_stateful(
+            "repeat",
+            Some(glib::VariantTy::STRING),
+            &"off".to_variant(),
+        );
+        repeat.connect_change_state({
+            let weak = weak.clone();
+            move |action, value| {
+                if let (Some(music), Some(value)) = (weak.upgrade(), value) {
+                    let mode = match value.str().unwrap_or("off") {
+                        "all" => Repeat::All,
+                        "one" => Repeat::One,
+                        _ => Repeat::Off,
+                    };
+                    music.player.set_repeat(mode);
+                    action.set_state(value);
+                }
+            }
+        });
+        self.window.add_action(&repeat);
+
+        let view = gio::SimpleAction::new_stateful(
+            "view",
+            Some(glib::VariantTy::STRING),
+            &"songs".to_variant(),
+        );
+        view.connect_change_state({
+            let weak = weak.clone();
+            move |_, value| {
+                if let (Some(music), Some(value)) = (weak.upgrade(), value) {
+                    // show_view records the new state itself.
+                    music.select_view(value.str().unwrap_or("songs"));
+                }
+            }
+        });
+        self.window.add_action(&view);
+
+        // Keep the menu in step with the player: its checks, and which
+        // playback items can be used at all.
+        let sync = {
+            let weak = weak.clone();
+            move |player: &Player| {
+                let Some(music) = weak.upgrade() else { return };
+                let state = player.state();
+                if let Some(a) = music.simple_action("shuffle") {
+                    a.set_state(&state.shuffle.to_variant());
+                }
+                if let Some(a) = music.simple_action("repeat") {
+                    let mode = match state.repeat {
+                        Repeat::Off => "off",
+                        Repeat::All => "all",
+                        Repeat::One => "one",
+                    };
+                    a.set_state(&mode.to_variant());
+                }
+                for name in ["play-pause", "next", "previous"] {
+                    if let Some(a) = music.simple_action(name) {
+                        a.set_enabled(state.has_track);
+                    }
+                }
+            }
+        };
+        sync(&self.player);
+        self.player.connect_changed(sync);
+        for name in crate::menu::ACTIONS {
+            if self.window.lookup_action(name).is_none() {
+                eprintln!("elavo-music: the menu uses win.{name}, which is not installed");
+            }
+        }
+    }
+
+    /// File > Add to Library: pick a folder and scan it in.
+    fn add_to_library(self: &Rc<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Add to Library")
+            .modal(true)
+            .build();
+        let weak = Rc::downgrade(self);
+        dialog.select_folder(Some(&self.window), gio::Cancellable::NONE, move |result| {
+            if let (Some(music), Ok(folder)) = (weak.upgrade(), result) {
+                if let Some(path) = folder.path() {
+                    music.scan(path);
+                }
+            }
+        });
+    }
+
+    /// After a scan: ask about online lookups the first time, or carry
+    /// them on if they are on. Nothing is sent unless they are on.
+    fn after_scan(self: &Rc<Self>) {
+        let choice = self.settings.borrow().online_metadata;
+        match choice {
+            OnlineChoice::Ask => {
+                if !self.asked.replace(true) && self.ctx.lib.count().unwrap_or(0) > 0 {
+                    self.ask_online();
+                }
+            }
+            OnlineChoice::On => self.start_online(),
+            OnlineChoice::Off => {}
+        }
+    }
+
+    /// The first-run question. "No Thanks" turns it off for good (it can
+    /// be turned on in Preferences). Not answering leaves it unanswered, and
+    /// it is asked again next time.
+    fn ask_online(&self) {
+        self.prompt.set_reveal_child(true);
+    }
+
+    fn set_online_choice(self: &Rc<Self>, choice: OnlineChoice) {
+        {
+            let mut settings = self.settings.borrow_mut();
+            if settings.online_metadata == choice {
+                return;
+            }
+            settings.online_metadata = choice;
+            if let Err(err) = settings.save(&paths::settings_file()) {
+                eprintln!("elavo-music: cannot save settings: {err}");
+            }
+        }
+        if let Some(prefs) = self.prefs.borrow().as_ref() {
+            prefs.set_online(choice == OnlineChoice::On);
+        }
+        match choice {
+            OnlineChoice::On => self.start_online(),
+            _ => self.cancel_online.store(true, Ordering::Relaxed),
+        }
+    }
+
+    fn online_status(&self) -> String {
+        match self.ctx.lib.online_counts() {
+            Ok((0, 0)) | Err(_) => "No songs looked up yet.".to_string(),
+            Ok((found, 0)) => format!("{found} songs found online."),
+            Ok((found, missing)) => format!("{found} songs found online, {missing} not found."),
+        }
+    }
+
+    fn show_prefs(self: &Rc<Self>) {
+        let existing = self.prefs.borrow().clone();
+        let prefs = match existing {
+            Some(prefs) => prefs,
+            None => {
+                let on = self.settings.borrow().online_metadata == OnlineChoice::On;
+                let toggle = Rc::downgrade(self);
+                let now = Rc::downgrade(self);
+                let prefs = Prefs::new(
+                    self.window.upcast_ref(),
+                    on,
+                    move |on| {
+                        if let Some(music) = toggle.upgrade() {
+                            music.set_online_choice(if on {
+                                OnlineChoice::On
+                            } else {
+                                OnlineChoice::Off
+                            });
+                        }
+                    },
+                    move || {
+                        if let Some(music) = now.upgrade() {
+                            music.start_online();
+                        }
+                    },
+                );
+                *self.prefs.borrow_mut() = Some(prefs.clone());
+                prefs
+            }
+        };
+        prefs.set_online(self.settings.borrow().online_metadata == OnlineChoice::On);
+        prefs.set_busy(self.fetching.get());
+        prefs.set_status(&self.online_status());
+        prefs.present();
+    }
+
+    /// Look up the songs that have not had a lookup, on a worker thread:
+    /// one request a second, then reload the views. Does nothing unless
+    /// online lookups are on.
+    fn start_online(self: &Rc<Self>) {
+        if self.settings.borrow().online_metadata != OnlineChoice::On
+            || self.scanning.get()
+            || self.fetching.replace(true)
+        {
+            return;
+        }
+        self.cancel_online.store(false, Ordering::Relaxed);
+        if let Some(prefs) = self.prefs.borrow().as_ref() {
+            prefs.set_busy(true);
+        }
+        let done = Arc::new(AtomicUsize::new(0));
+        let total = Arc::new(AtomicUsize::new(0));
+        let handle = gio::spawn_blocking({
+            let (done, total) = (done.clone(), total.clone());
+            let cancel = self.cancel_online.clone();
+            move || {
+                let lib = Library::open(&paths::database()).map_err(|e| e.to_string())?;
+                let art = ArtCache::new(paths::art_dir());
+                let online = Online::new()?;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                run_batch(
+                    OnlineChoice::On,
+                    &online,
+                    &lib,
+                    &art,
+                    100_000,
+                    now,
+                    &|| cancel.load(Ordering::Relaxed),
+                    &mut |n, all| {
+                        done.store(n, Ordering::Relaxed);
+                        total.store(all, Ordering::Relaxed);
+                    },
+                )
+                .map_err(|e| e.to_string())
+            }
+        });
+        let finished = Rc::new(Cell::new(false));
+        {
+            let finished = finished.clone();
+            let weak = Rc::downgrade(self);
+            glib::timeout_add_local(Duration::from_millis(500), move || {
+                let Some(music) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                if finished.get() {
+                    return glib::ControlFlow::Break;
+                }
+                let all = total.load(Ordering::Relaxed);
+                if all > 0 && !music.scanning.get() {
+                    music.scan_label.set_label(&format!(
+                        "Looking up song info… {} of {}",
+                        done.load(Ordering::Relaxed),
+                        all
+                    ));
+                    music.scan_bar.set_reveal_child(true);
+                }
+                glib::ControlFlow::Continue
+            });
+        }
+        let this = self.clone();
+        glib::spawn_future_local(async move {
+            let result = handle.await;
+            finished.set(true);
+            this.fetching.set(false);
+            if !this.scanning.get() {
+                this.scan_bar.set_reveal_child(false);
+            }
+            match result {
+                Ok(Ok(report)) => eprintln!(
+                    "elavo-music: online lookup: {} looked up, {} found, {} not found, {} pictures, {} failed{}",
+                    report.looked_up,
+                    report.matched,
+                    report.not_found,
+                    report.art_added,
+                    report.failed,
+                    if report.stopped_early { " (stopped early)" } else { "" }
+                ),
+                Ok(Err(err)) => eprintln!("elavo-music: online lookup failed: {err}"),
+                Err(_) => eprintln!("elavo-music: online lookup stopped unexpectedly"),
+            }
+            this.refresh();
+            if let Some(prefs) = this.prefs.borrow().as_ref() {
+                prefs.set_busy(false);
+                prefs.set_status(&this.online_status());
+            }
+        });
+    }
 }
 
 impl Music {
@@ -434,22 +799,6 @@ impl Music {
                 }
             }
         });
-        // Ctrl+F goes to Find.
-        let find = gtk::Shortcut::new(
-            gtk::ShortcutTrigger::parse_string("<Control>f"),
-            Some(gtk::CallbackAction::new({
-                let search = self.search.clone();
-                move |_, _| {
-                    search.grab_focus();
-                    glib::Propagation::Stop
-                }
-            })),
-        );
-        let controller = gtk::ShortcutController::new();
-        controller.set_scope(gtk::ShortcutScope::Global);
-        controller.add_shortcut(find);
-        self.window.add_controller(controller);
-
         // Space and the audio keys are handled here, in capture, so they
         // pause or skip instead of activating a row or leaving the play
         // button stuck after a Space press on the button itself. Typematic
@@ -500,6 +849,9 @@ impl Music {
 
     fn show_view(&self, id: &str) {
         *self.view.borrow_mut() = id.to_string();
+        if let Some(action) = self.simple_action("view") {
+            action.set_state(&id.to_variant());
+        }
         let (title, find) = match id {
             "recent" => ("Recently Added", Some("Find in Recently Added")),
             "artists" => ("Artists", Some("Find in Artists")),
@@ -604,11 +956,16 @@ impl Music {
 
     /// Scan the music folder on a worker thread, then reload.
     fn rescan(self: &Rc<Self>) {
+        self.scan(self.music_dir.clone());
+    }
+
+    /// Scan a folder into the library on a worker thread, then reload. Only
+    /// songs under that folder can be dropped for having gone missing.
+    fn scan(self: &Rc<Self>, folder: PathBuf) {
         if self.scanning.replace(true) {
             return;
         }
         let progress = Arc::new(AtomicUsize::new(0));
-        let folder = self.music_dir.clone();
         let handle = gio::spawn_blocking({
             let progress = progress.clone();
             move || {
@@ -655,6 +1012,7 @@ impl Music {
             this.scan_bar.set_reveal_child(false);
             this.refresh();
             this.demo();
+            this.after_scan();
         });
     }
 
@@ -662,7 +1020,7 @@ impl Music {
     /// ELAVO_MUSIC_OPEN_ALBUM=1 opens the first album, ELAVO_MUSIC_PLAY=N
     /// starts the Nth song of the view, and ELAVO_MUSIC_PROGRESS_MS=N then
     /// seeks into it. They run once, after the first scan.
-    fn demo(&self) {
+    fn demo(self: &Rc<Self>) {
         thread_local! { static DONE: Cell<bool> = const { Cell::new(false) }; }
         if DONE.with(|d| d.replace(true)) {
             return;
@@ -695,9 +1053,38 @@ impl Music {
                 self.player.seek_ms_for_demo(ms);
             }
         }
+        if let Ok(which) = std::env::var("ELAVO_MUSIC_SHOW_MENU") {
+            self.show_menu_for_screenshot(&which);
+        }
+        if std::env::var("ELAVO_MUSIC_SHOW_PREFS").is_ok() {
+            self.show_prefs();
+        }
         if let Ok(script) = std::env::var("ELAVO_MUSIC_THEN") {
             if !script.is_empty() {
                 self.player.run_then_script(&script);
+            }
+        }
+    }
+
+    /// Screenshot hook: ELAVO_MUSIC_SHOW_MENU=Controls pops up that menu of
+    /// the global menu, drawn by GTK as the panel would, over the window.
+    fn show_menu_for_screenshot(&self, which: &str) {
+        let menu = crate::menu::build();
+        for i in 0..menu.n_items() {
+            let label = menu
+                .item_attribute_value(i, "label", None)
+                .and_then(|v| v.get::<String>());
+            if label.as_deref() != Some(which) {
+                continue;
+            }
+            if let Some(sub) = menu.item_link(i, gio::MENU_LINK_SUBMENU) {
+                let popover = gtk::PopoverMenu::from_model(Some(&sub));
+                popover.set_parent(&self.title);
+                popover.set_has_arrow(false);
+                popover.set_halign(gtk::Align::Start);
+                popover.popup();
+                // Keep it alive for the length of the run.
+                std::mem::forget(popover);
             }
         }
     }

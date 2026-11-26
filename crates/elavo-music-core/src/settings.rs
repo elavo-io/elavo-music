@@ -56,6 +56,35 @@ impl RipFormat {
     }
 }
 
+/// Whether Music may look songs up online (MusicBrainz and the Cover Art
+/// Archive). Until the person answers, it is `Ask`, which sends nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum OnlineChoice {
+    /// Not asked yet. Nothing is sent.
+    #[default]
+    Ask,
+    On,
+    Off,
+}
+
+impl OnlineChoice {
+    fn key(self) -> &'static str {
+        match self {
+            OnlineChoice::Ask => "ask",
+            OnlineChoice::On => "on",
+            OnlineChoice::Off => "off",
+        }
+    }
+
+    fn from_key(key: &str) -> OnlineChoice {
+        match key {
+            "on" => OnlineChoice::On,
+            "off" => OnlineChoice::Off,
+            _ => OnlineChoice::Ask,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RipSettings {
     pub format: RipFormat,
@@ -75,11 +104,12 @@ impl Default for RipSettings {
 pub struct Settings {
     pub music_folder: PathBuf,
     pub rip: RipSettings,
+    pub online_metadata: OnlineChoice,
 }
 
 impl Settings {
     pub fn new(music_folder: PathBuf) -> Settings {
-        Settings { music_folder, rip: RipSettings::default() }
+        Settings { music_folder, rip: RipSettings::default(), online_metadata: OnlineChoice::default() }
     }
 
     pub fn parse(text: &str, default_folder: PathBuf) -> Settings {
@@ -100,6 +130,7 @@ impl Settings {
                     }
                 }
                 "rip-vbr" => settings.rip.vbr = value != "false",
+                "online-metadata" => settings.online_metadata = OnlineChoice::from_key(value),
                 _ => {}
             }
         }
@@ -108,11 +139,12 @@ impl Settings {
 
     pub fn serialize(&self) -> String {
         format!(
-            "music-folder={}\nrip-format={}\nrip-bitrate={}\nrip-vbr={}\n",
+            "music-folder={}\nrip-format={}\nrip-bitrate={}\nrip-vbr={}\nonline-metadata={}\n",
             self.music_folder.display(),
             self.rip.format.key(),
             self.rip.bitrate_kbps,
-            self.rip.vbr
+            self.rip.vbr,
+            self.online_metadata.key()
         )
     }
 
@@ -162,6 +194,24 @@ mod tests {
         assert_eq!(s.rip.bitrate_kbps, 320, "clamped");
         assert_eq!(s.music_folder, PathBuf::from("/m"));
         assert_eq!(Settings::load(Path::new("/definitely/not/here"), "/m".into()), Settings::new("/m".into()));
+    }
+
+    #[test]
+    fn online_lookups_are_off_until_asked() {
+        let s = Settings::new("/m".into());
+        assert_eq!(s.online_metadata, OnlineChoice::Ask);
+        assert_eq!(Settings::parse("", "/m".into()).online_metadata, OnlineChoice::Ask);
+        assert_eq!(Settings::parse("online-metadata=banana", "/m".into()).online_metadata, OnlineChoice::Ask);
+        for choice in [OnlineChoice::On, OnlineChoice::Off, OnlineChoice::Ask] {
+            let mut s = Settings::new("/m".into());
+            s.online_metadata = choice;
+            assert_eq!(Settings::parse(&s.serialize(), "/m".into()).online_metadata, choice);
+        }
+        // An older file without the key stays at Ask.
+        assert_eq!(
+            Settings::parse("music-folder=/x\nrip-format=mp3\n", "/m".into()).online_metadata,
+            OnlineChoice::Ask
+        );
     }
 
     #[test]

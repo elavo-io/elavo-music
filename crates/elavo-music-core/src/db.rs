@@ -5,11 +5,12 @@ use std::path::Path;
 
 use rusqlite::{params, params_from_iter, Connection, Row};
 
-use crate::model::{Album, Artist, Filter, Track};
+use crate::model::{Album, Artist, Filter, OnlineMeta, Track};
+use crate::tags::{UNKNOWN_ALBUM, UNKNOWN_ARTIST};
 
 pub type Result<T> = rusqlite::Result<T>;
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrackOrder {
@@ -147,6 +148,26 @@ impl Library {
                 );
                 CREATE INDEX tracks_album ON tracks (album_artist, album);
                 CREATE INDEX tracks_genre ON tracks (genre);",
+            )?;
+        }
+        if version < 2 {
+            // What online lookups found, kept apart from the tags read from
+            // the files so a rescan never loses it and nothing here is ever
+            // written back to a file.
+            self.conn.execute_batch(
+                "CREATE TABLE online_meta (
+                    track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                    checked_at INTEGER NOT NULL,
+                    matched INTEGER NOT NULL,
+                    recording_mbid TEXT NOT NULL DEFAULT '',
+                    release_mbid TEXT NOT NULL DEFAULT '',
+                    release_group_mbid TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    artist TEXT NOT NULL DEFAULT '',
+                    album TEXT NOT NULL DEFAULT '',
+                    year INTEGER NOT NULL DEFAULT 0,
+                    art TEXT
+                );",
             )?;
         }
         if version < SCHEMA_VERSION {
@@ -325,6 +346,120 @@ impl Library {
         self.conn
             .execute("UPDATE tracks SET plays = plays + 1 WHERE id = ?1", [id])?;
         Ok(())
+    }
+}
+
+/// Online lookups: what was found, and filling the blanks of the library
+/// with it. The files themselves are never changed.
+impl Library {
+    /// Songs with no lookup yet, plus songs whose last lookup found nothing
+    /// and is older than `retry_after_secs`. In library order, so the songs
+    /// of an album come together.
+    pub fn pending_online(&self, now: i64, retry_after_secs: i64, limit: usize) -> Result<Vec<Track>> {
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS} FROM tracks
+             WHERE id NOT IN (SELECT track_id FROM online_meta WHERE matched = 1 OR checked_at > ?1)
+             ORDER BY album_artist COLLATE NOCASE, album COLLATE NOCASE, disc_no, track_no
+             LIMIT ?2"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![now - retry_after_secs, limit as i64], track_from_row)?;
+        rows.collect()
+    }
+
+    pub fn save_online(&self, meta: &OnlineMeta) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO online_meta
+                (track_id, checked_at, matched, recording_mbid, release_mbid, release_group_mbid,
+                 title, artist, album, year, art)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                meta.track_id,
+                meta.checked_at,
+                meta.matched,
+                meta.recording_mbid,
+                meta.release_mbid,
+                meta.release_group_mbid,
+                meta.title,
+                meta.artist,
+                meta.album,
+                meta.year as i64,
+                meta.art,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn online_meta(&self, track_id: i64) -> Result<Option<OnlineMeta>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id, checked_at, matched, recording_mbid, release_mbid, release_group_mbid,
+                    title, artist, album, year, art
+             FROM online_meta WHERE track_id = ?1",
+        )?;
+        let mut rows = stmt.query_map([track_id], |r| {
+            Ok(OnlineMeta {
+                track_id: r.get(0)?,
+                checked_at: r.get(1)?,
+                matched: r.get(2)?,
+                recording_mbid: r.get(3)?,
+                release_mbid: r.get(4)?,
+                release_group_mbid: r.get(5)?,
+                title: r.get(6)?,
+                artist: r.get(7)?,
+                album: r.get(8)?,
+                year: r.get::<_, i64>(9)? as u32,
+                art: r.get(10)?,
+            })
+        })?;
+        rows.next().transpose()
+    }
+
+    /// `(matched, found nothing)`: how many songs have had a lookup.
+    pub fn online_counts(&self) -> Result<(u64, u64)> {
+        self.conn.query_row(
+            "SELECT COALESCE(SUM(matched), 0), COALESCE(SUM(1 - matched), 0) FROM online_meta",
+            [],
+            |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)),
+        )
+    }
+
+    /// Fills the blanks of a song's library entry from what was found for
+    /// it: an unknown artist or album, a missing year, missing artwork.
+    /// Tags that the file has are kept. Returns true if anything changed.
+    pub fn apply_online(&self, track_id: i64) -> Result<bool> {
+        let Some(meta) = self.online_meta(track_id)? else { return Ok(false) };
+        if !meta.matched {
+            return Ok(false);
+        }
+        let Some(track) = self.track(track_id)? else { return Ok(false) };
+        let mut changed = false;
+        if track.artist == UNKNOWN_ARTIST && !meta.artist.is_empty() {
+            self.conn.execute("UPDATE tracks SET artist = ?2 WHERE id = ?1", params![track_id, meta.artist])?;
+            changed = true;
+        }
+        if track.album_artist == UNKNOWN_ARTIST && !meta.artist.is_empty() {
+            self.conn.execute("UPDATE tracks SET album_artist = ?2 WHERE id = ?1", params![track_id, meta.artist])?;
+            changed = true;
+        }
+        if track.album == UNKNOWN_ALBUM && !meta.album.is_empty() {
+            self.conn.execute("UPDATE tracks SET album = ?2 WHERE id = ?1", params![track_id, meta.album])?;
+            changed = true;
+        }
+        if track.year == 0 && meta.year != 0 {
+            self.conn.execute("UPDATE tracks SET year = ?2 WHERE id = ?1", params![track_id, meta.year as i64])?;
+            changed = true;
+        }
+        if let (None, Some(art)) = (&track.art, &meta.art) {
+            // The whole album gets the picture, so its tracks do not split
+            // into one with a cover and the rest without.
+            let album = self.track(track_id)?.unwrap_or(track);
+            let n = self.conn.execute(
+                "UPDATE tracks SET art = ?1 WHERE art IS NULL AND album_artist = ?2 AND album = ?3",
+                params![art, album.album_artist, album.album],
+            )?;
+            changed |= n > 0;
+        }
+        Ok(changed)
     }
 }
 

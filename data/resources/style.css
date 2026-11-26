@@ -282,14 +282,75 @@
   border-radius: 999px;
   padding: 6px 18px;
   min-height: 0;
+  /* Override the Elavo theme's default button chrome (light top
+     border, darker bottom border, drop shadow, hover/active
+     highlight gradient) so these stay flat, like Notes' pills. */
+  border: none;
+  box-shadow: none;
+  background-image: none;
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.music-pill-button:hover {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  background-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.music-pill-button:active,
+.music-pill-button:checked {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  background-color: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.music-pill-button:disabled {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  opacity: 0.5;
 }
 
 .music-accent-button {
   background-color: color-mix(in srgb, var(--music-accent) 16%, transparent);
+  background-image: none;
   color: var(--music-accent);
   font-weight: 600;
   border: none;
   box-shadow: none;
+}
+
+.music-accent-button:hover {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  background-color: color-mix(in srgb, var(--music-accent) 24%, transparent);
+}
+
+.music-accent-button:active,
+.music-accent-button:checked {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+  background-color: color-mix(in srgb, var(--music-accent) 28%, transparent);
+}
+
+.music-accent-button:disabled {
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+/* The first-run question about online lookups, over the top of the content. */
+.music-prompt {
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background-color: color-mix(in srgb, @theme_bg_color 86%, currentColor 14%);
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
 }
 
 .music-scan-label {

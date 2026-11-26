@@ -65,3 +65,24 @@ impl Filter {
         }
     }
 }
+
+/// What an online lookup found for one song. It lives in the library
+/// database beside the song, never in the song's file.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OnlineMeta {
+    pub track_id: i64,
+    /// Unix seconds of the lookup.
+    pub checked_at: i64,
+    /// False when the lookup ran and found nothing.
+    pub matched: bool,
+    pub recording_mbid: String,
+    pub release_mbid: String,
+    pub release_group_mbid: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    /// 0 when unknown.
+    pub year: u32,
+    /// A key into the artwork cache, if cover art was found.
+    pub art: Option<String>,
+}

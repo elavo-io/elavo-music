@@ -32,7 +32,24 @@ struct Ui {
     vol: gtk::Box,
 }
 
+/// What the outside world (menus, MPRIS) can see of the player. A listener
+/// is called whenever any part of it changes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerState {
+    pub playing: bool,
+    pub has_track: bool,
+    pub track_id: i64,
+    pub shuffle: bool,
+    pub repeat: Repeat,
+    /// 0 to 100.
+    pub volume_percent: u32,
+}
+
+type Listener = Rc<dyn Fn(&Player)>;
+
 pub struct Player {
+    listeners: RefCell<Vec<Listener>>,
+    last_state: RefCell<Option<PlayerState>>,
     backend: RefCell<Box<dyn Backend>>,
     queue: RefCell<Queue>,
     art: Rc<ArtCache>,
@@ -81,9 +98,13 @@ impl Player {
         let title = label("Not Playing", &["music-now-title"]);
         let artist = label("", &["music-now-artist"]);
         let elapsed = label("0:00", &["music-time"]);
-        elapsed.set_xalign(1.0);
+        // The elapsed time starts exactly under the title and artist text,
+        // and the time left ends at the bar's right edge. Both have a fixed
+        // width so the progress bar does not move as the digits change.
+        elapsed.set_xalign(0.0);
         elapsed.set_width_chars(5);
         let remaining = label("-0:00", &["music-time"]);
+        remaining.set_xalign(1.0);
         remaining.set_width_chars(5);
         let progress = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.001);
         progress.set_draw_value(false);
@@ -165,6 +186,8 @@ impl Player {
             vol,
         };
         let player = Rc::new(Player {
+            listeners: RefCell::new(Vec::new()),
+            last_state: RefCell::new(None),
             backend: RefCell::new(backend),
             queue: RefCell::new(Queue::new()),
             art,
@@ -220,6 +243,7 @@ impl Player {
             self.ui.shuffle.connect_toggled(move |b| {
                 if let Some(p) = this.upgrade() {
                     p.queue.borrow_mut().set_shuffle(b.is_active());
+                    p.notify();
                 }
             });
         }
@@ -237,6 +261,7 @@ impl Player {
             self.ui.volume.connect_value_changed(move |s| {
                 if let Some(p) = this.upgrade() {
                     p.backend.borrow_mut().set_volume(s.value());
+                    p.notify();
                 }
             });
         }
@@ -432,6 +457,8 @@ impl Player {
         } else {
             ui.repeat.remove_css_class("active");
         }
+        drop(queue);
+        self.notify();
     }
 
     fn tick_labels(&self) {
@@ -497,6 +524,111 @@ impl Player {
             if pos % 1000 < 280 {
                 eprintln!("elavo-music: position {pos} / {dur} ms ({title})");
             }
+        }
+    }
+}
+
+/// The part of the player the global menu and MPRIS use.
+impl Player {
+    pub fn state(&self) -> PlayerState {
+        let queue = self.queue.borrow();
+        PlayerState {
+            playing: self.backend.borrow().is_playing(),
+            has_track: queue.current().is_some(),
+            track_id: queue.current().map(|t| t.id).unwrap_or(0),
+            shuffle: queue.shuffle(),
+            repeat: queue.repeat,
+            volume_percent: (self.ui.volume.value() * 100.0).round() as u32,
+        }
+    }
+
+    /// Call `f` after any change to the state (play, pause, song, shuffle,
+    /// repeat, volume). Listeners must not call back into a method that
+    /// changes the state.
+    pub fn connect_changed(&self, f: impl Fn(&Player) + 'static) {
+        self.listeners.borrow_mut().push(Rc::new(f));
+    }
+
+    fn notify(&self) {
+        let state = self.state();
+        if self.last_state.borrow().as_ref() == Some(&state) {
+            return;
+        }
+        *self.last_state.borrow_mut() = Some(state);
+        let listeners: Vec<Listener> = self.listeners.borrow().clone();
+        for listener in listeners {
+            listener(self);
+        }
+    }
+
+    pub fn current_track(&self) -> Option<Track> {
+        self.queue.borrow().current().cloned()
+    }
+
+    /// The picture of the current song, if it has one.
+    pub fn current_art_file(&self) -> Option<std::path::PathBuf> {
+        let track = self.current_track()?;
+        art_path(&self.art, &track.art)
+    }
+
+    pub fn position_ms(&self) -> u64 {
+        self.backend.borrow().position_ms()
+    }
+
+    pub fn seek_ms(&self, ms: u64) {
+        if self.queue.borrow().current().is_none() {
+            return;
+        }
+        let duration = self.backend.borrow().duration_ms();
+        let ms = if duration > 0 { ms.min(duration) } else { ms };
+        self.backend.borrow_mut().seek_ms(ms);
+        self.last_seek.set(Some(Instant::now()));
+        self.tick_labels();
+    }
+
+    pub fn volume(&self) -> f64 {
+        self.ui.volume.value()
+    }
+
+    pub fn set_volume(&self, volume: f64) {
+        self.ui.volume.set_value(volume.clamp(0.0, 1.0));
+    }
+
+    pub fn adjust_volume(&self, delta: f64) {
+        self.set_volume(self.volume() + delta);
+    }
+
+    pub fn set_shuffle(&self, on: bool) {
+        self.ui.shuffle.set_active(on);
+    }
+
+    pub fn set_repeat(&self, repeat: Repeat) {
+        self.queue.borrow_mut().repeat = repeat;
+        self.refresh();
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.backend.borrow().is_playing()
+    }
+
+    pub fn play(self: &Rc<Self>) {
+        if !self.is_playing() {
+            self.toggle();
+        }
+    }
+
+    pub fn pause(self: &Rc<Self>) {
+        if self.is_playing() {
+            self.toggle();
+        }
+    }
+
+    /// Pause and go back to the start of the song.
+    pub fn stop(self: &Rc<Self>) {
+        self.pause();
+        if self.queue.borrow().current().is_some() {
+            self.backend.borrow_mut().seek_ms(0);
+            self.tick_labels();
         }
     }
 }

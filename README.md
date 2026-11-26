@@ -15,9 +15,15 @@ It is written in Rust with GTK 4, on the same footing as Elavo Files, System Set
 - A floating pill player bar: shuffle, previous, play or pause, next, repeat (off, all, one), artwork, title and artist, a progress bar you can seek with, and volume. Songs are counted as played after half their length or 30 seconds.
 - Empty states for an empty library and for a search or filter with no results.
 
+## Menus, media keys and online lookups
+
+- **Menu bar.** Music exports File, Edit, Controls and View through GtkApplication's menubar, for Folio's global menu. It has no Music (app-name) menu, no Quit and no Window menu, because the panel draws those. Tests in `src/menu.rs` assert this.
+- **Media keys.** `src/mpris.rs` serves `org.mpris.MediaPlayer2.io.elavo.Music` on the session bus (Play, Pause, PlayPause, Next, Previous, Stop, Seek, SetPosition, volume, shuffle, loop, metadata and art). Wayland sends keys only to the focused window, so the labwc keybinds for the XF86Audio keys live in the `elavo` image (`elavo-media-key`) and call MPRIS.
+- **Online metadata and album art (opt-in).** Off until the person says yes, in a card on first run or in Preferences. When on, Music asks MusicBrainz for songs missing a title, artist, album or genre, and the Cover Art Archive for album art. One request per second at most, a User-Agent that names the app, art cached under `~/.cache/elavo-music/art`, results kept in the library database (`online_meta`) and never written to the files' tags. Code: `elavo-music-core/src/online.rs`, tested against mocked HTTP.
+
 ## Not built yet
 
-MPRIS (media keys and Folio's media controls), gapless playback, ReplayGain, the equalizer, the queue panel, the MiniPlayer, full-screen Now Playing, star ratings, Get Info and tag editing, playlists, a settings window, watching the folder for changes, opening files from the file manager, importing a Music or iTunes library, disc import, and device sync.
+gapless playback, ReplayGain, the equalizer, the queue panel, the MiniPlayer, full-screen Now Playing, star ratings, Get Info and tag editing, playlists, watching the folder for changes, opening files from the file manager, importing a Music or iTunes library, disc import, and device sync.
 
 ## Sound
 
@@ -36,7 +42,7 @@ Under System Settings' coming Automatic accent, an app can declare its own defau
 
 ## Settings
 
-The settings model (`elavo-music-core/src/settings.rs`, stored in `~/.config/elavo/music.conf`) holds the music folder and the disc-import format. The default is AAC at 256 kbps, variable bitrate, with MP3, Apple Lossless and FLAC as options. There is no window for it yet.
+The settings model (`elavo-music-core/src/settings.rs`, stored in `~/.config/elavo/music.conf`) holds the music folder, the disc-import format and `online-metadata` (`ask`, `on` or `off`; the default `ask` sends nothing). The default is AAC at 256 kbps, variable bitrate, with MP3, Apple Lossless and FLAC as options. Music's Preferences window (File menu) has the online-metadata switch.
 
 ## Build and test
 

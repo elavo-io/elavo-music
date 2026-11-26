@@ -70,11 +70,14 @@ start)
     fi
     mkdir -p "$T/labwc" "$T/config"
     : >"$T/labwc/autostart"
-    cat >"$T/labwc/rc.xml" <<'XML'
+    # MUSIC_RC_KEYBINDS: <keybind> elements to put in the nested labwc, to
+    # try global media keys.
+    cat >"$T/labwc/rc.xml" <<XML
 <?xml version="1.0"?>
 <labwc_config>
   <core><decoration>client</decoration></core>
   <placement><policy>center</policy></placement>
+  <keyboard>${MUSIC_RC_KEYBINDS:-}</keyboard>
 </labwc_config>
 XML
     rm -f "$T/socket"
@@ -98,6 +101,9 @@ run)
     printf '[Settings]\ngtk-theme-name=%s\ngtk-icon-theme-name=%s\ngtk-interface-color-scheme=dark\ngtk-application-prefer-dark-theme=true\ngtk-decoration-layout=close,minimize,maximize:\n' \
         "${GTK_THEME_NAME:-Elavo}" "${ICON_THEME_NAME:-Elavo}" >"$T/config/gtk-4.0/settings.ini"
     printf 'music-folder=%s\n' "$LIBRARY" >"$T/config/elavo/music.conf"
+    # MUSIC_ONLINE=ask|on|off sets the online-lookup choice; unset it stays
+    # "ask", which sends nothing and shows the first-run question.
+    [ -z "${MUSIC_ONLINE:-}" ] || printf 'online-metadata=%s\n' "$MUSIC_ONLINE" >>"$T/config/elavo/music.conf"
     [ -d "$LIBRARY" ] || { echo "no test library at $LIBRARY; run scripts/make-test-library.sh" >&2; exit 1; }
     [ "${KEEP:-0}" = 1 ] || rm -rf "$T/data/elavo-music" "$T/cache"
     mkdir -p "$T/data" "$T/cache"
@@ -118,6 +124,9 @@ run)
         ${ELAVO_MUSIC_PROGRESS_MS:+ELAVO_MUSIC_PROGRESS_MS="$ELAVO_MUSIC_PROGRESS_MS"} \
         ${ELAVO_MUSIC_THEN:+ELAVO_MUSIC_THEN="$ELAVO_MUSIC_THEN"} \
         ${ELAVO_MUSIC_DEBUG:+ELAVO_MUSIC_DEBUG="$ELAVO_MUSIC_DEBUG"} \
+        ${ELAVO_MUSIC_SHOW_MENU:+ELAVO_MUSIC_SHOW_MENU="$ELAVO_MUSIC_SHOW_MENU"} \
+        ${ELAVO_MUSIC_SHOW_PREFS:+ELAVO_MUSIC_SHOW_PREFS="$ELAVO_MUSIC_SHOW_PREFS"} \
+        ${MUSIC_HTTPS_PROXY:+HTTPS_PROXY="$MUSIC_HTTPS_PROXY"} \
         dbus-run-session -- sh -c '
             echo $$ >"$1/app.pid"
             gsettings set org.gnome.desktop.interface color-scheme prefer-dark

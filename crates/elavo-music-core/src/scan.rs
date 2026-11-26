@@ -104,7 +104,7 @@ pub fn scan_folder(
                     let data = fs::read(&folder).ok()?;
                     art.store(&data, None).ok()
                 });
-            lib.upsert_track(&Track {
+            let id = lib.upsert_track(&Track {
                 path: key,
                 size,
                 mtime,
@@ -121,6 +121,9 @@ pub fn scan_folder(
                 art: art_key,
                 ..Track::default()
             })?;
+            // A rewrite of the song's row must not lose what an online
+            // lookup filled in for it.
+            lib.apply_online(id)?;
             if existing.is_some() {
                 report.updated += 1;
             } else {

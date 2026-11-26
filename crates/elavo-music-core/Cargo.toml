@@ -10,6 +10,10 @@ description = "Library, tags, database and queue for Elavo Music"
 [dependencies]
 lofty = "0.25"
 rusqlite = "0.43"
+serde_json = "1"
+# Only used when the person has turned on online lookups. A blocking client
+# on a worker thread; rustls so no system TLS library is needed.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 [dev-dependencies]
 tempfile = "3"

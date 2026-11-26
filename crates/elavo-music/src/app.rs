@@ -12,11 +12,15 @@ pub const APP_ID: &str = "io.elavo.Music";
 
 pub fn run() -> gtk::glib::ExitCode {
     let app = gtk::Application::builder().application_id(APP_ID).build();
-    app.connect_startup(|_| {
+    app.connect_startup(|app| {
         load_css();
         install_icon();
         follow_color_scheme();
         gtk::Window::set_default_icon_name(APP_ID);
+        // The panel's global menu reads this; the window does not draw it.
+        // It leaves out an app-named menu and Quit: the panel adds both.
+        app.set_menubar(Some(&crate::menu::build()));
+        crate::menu::install_accels(app);
     });
     app.connect_activate(|app| {
         if let Some(window) = app.active_window() {
